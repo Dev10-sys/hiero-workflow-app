@@ -2,7 +2,7 @@
 
 The Hiero Workflow Automation Hub is the central orchestration layer for all GitHub interactions across the Hiero ecosystem. It reduces maintainer fatigue by automating repetitive tasks like contributor qualification, PR validation, and issue assignment.
 
-## 🚀 Getting Started
+## Getting Started
 
 ### 1. Configuration (`.hiero-workflow.yml`)
 Each repository must include a `.hiero-workflow.yml` at its root. This file defines which rules are active and their thresholds.
@@ -10,17 +10,17 @@ Each repository must include a `.hiero-workflow.yml` at its root. This file defi
 ### 2. The Hub Proxy (`hiero-workflow-app`)
 A Node.js backend that receives webhooks, evaluates rules, and executes actions via the GitHub API.
 
-## ⚙️ Core Modules
+## Core Modules
 
 1. **Qualification Service**: Cross-repo contributor history evaluation.
 2. **Labeling Engine**: Automated categorical and sizing labels.
 3. **Validation Suite**: PR standards and quality checks.
 4. **Stale Automator**: Scheduled cleanup of inactive issues/PRs.
 
-## 🔐 Permissions & Security
+## Permissions & Security
 The Hub uses a dedicated GitHub App Token with minimal scope required for issue/PR management. No code-writing permissions are granted by default.
 
-## 🏗️ Architecture
+## Architecture
 The system uses a Hub-and-Spoke model:
 - **Hub**: `hiero-workflow-app` (Logic & Orchestration)
 - **Spoke**: SDKs, CLI, Analytics (Events & Configuration)

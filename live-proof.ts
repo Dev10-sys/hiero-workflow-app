@@ -21,7 +21,7 @@ class Engine {
   }
 
   async run(targetOwner: string, targetRepo: string, prNumber: number) {
-    console.log(`\n>>> 🤖 Hiero Automation: Evaluating PR #${prNumber} in ${targetOwner}/${targetRepo}`);
+    console.log(`\n>>> Hiero Automation: Evaluating PR #${prNumber} in ${targetOwner}/${targetRepo}`);
     
     // 1. Get PR details to find where it's coming from
     const { data: pr } = await this.octokit.pulls.get({ owner: targetOwner, repo: targetRepo, pull_number: prNumber });
@@ -44,25 +44,25 @@ class Engine {
 
     const failures: string[] = [];
 
-    // 3. Title check
+    // Title check
     const tc = config.pull_requests?.title_check;
     if (tc?.enabled && !new RegExp(tc.pattern).test(pr.title)) {
-        failures.push(`❌ **PR Title**: ${tc.error_message} (Found: "${pr.title}")`);
+        failures.push(`[Failed] PR Title: ${tc.error_message} (Found: "${pr.title}")`);
     }
 
-    // 4. Assignee check
+    // Assignee check
     const ac = config.pull_requests?.assignee;
     if (ac?.required && pr.assignees?.length === 0) {
-        failures.push(`❌ **Assignee**: ${ac.error_message}`);
+        failures.push(`[Failed] Assignee: ${ac.error_message}`);
     }
 
-    // 5. Post Results
+    // Post Results
     if (failures.length > 0) {
-        const body = `### 🤖 Hiero Workflow Check\n\n${failures.join("\n")}\n\n*Please fix these to proceed.*`;
+        const body = `### Hiero Workflow Check\n\n${failures.join("\n")}\n\nPlease fix these to proceed.`;
         await this.octokit.issues.createComment({ owner: targetOwner, repo: targetRepo, issue_number: prNumber, body });
-        console.log("✅ LIVE PROOF: Comment posted on GitHub successfully.");
+        console.log("LIVE PROOF: Comment posted on GitHub successfully.");
     } else {
-        console.log("✅ All checks passed.");
+        console.log("All checks passed.");
     }
   }
 }

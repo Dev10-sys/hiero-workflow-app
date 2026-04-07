@@ -27,9 +27,9 @@ class Engine {
   }
 
   async evaluateIssue(owner: string, repo: string, issueNumber: number, assignee: string) {
-    console.log(`\n>>> 🤖 Hiero Automation: Evaluating Assignment of @${assignee} to Issue #${issueNumber} in ${owner}/${repo}`);
+    console.log(`\n>>> Hiero Automation: Evaluating Assignment of @${assignee} to Issue #${issueNumber} in ${owner}/${repo}`);
     
-    // 1. Get Issue Details
+    // Get Issue Details
     const { data: issue } = await this.octokit.issues.get({ owner, repo, issue_number: issueNumber });
 
     // 2. Load Config from Hiero-Automation-Init branch (since it's not merged yet)
@@ -66,11 +66,11 @@ class Engine {
 
         if (count < rule.prerequisite_closed_issues) {
           console.log(`[Action] FAIL: User not qualified. Unassigning...`);
-          const body = `⚠️ **Qualification Warning**\n\nHi @${assignee}, I cannot assign you to this issue yet. To qualify for **${labelName}** issues, you need to have completed at least ${rule.prerequisite_closed_issues} **${rule.prerequisite_label}** issues. Keep building your experience!`;
+          const body = `Qualification Warning\n\nHi @${assignee}, I cannot assign you to this issue yet. To qualify for ${labelName} issues, you need to have completed at least ${rule.prerequisite_closed_issues} ${rule.prerequisite_label} issues. Keep building your experience!`;
           
           await this.octokit.issues.createComment({ owner, repo, issue_number: issueNumber, body });
           await this.octokit.issues.removeAssignees({ owner, repo, issue_number: issueNumber, assignees: [assignee] });
-          console.log("✅ LIVE PROOF: Unassigned and Commented on GitHub.");
+          console.log("LIVE PROOF: Unassigned and Commented on GitHub.");
         }
       }
     }

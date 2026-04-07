@@ -14,16 +14,16 @@ async function runLiveTest() {
   const octokit = new Octokit({ auth: AUTH_TOKEN });
   const engine = new Engine(octokit);
 
-  console.log("🚀 Starting Live Execution Test...");
+  console.log("Starting Live Execution Test...");
   console.log("Target: hiero-ledger/hiero-sdk-python PR #2083");
 
   try {
-    // 1. Evaluate the PR (This will check title, assignee, and apply labels)
+    // Evaluate the PR check rules
     await engine.evaluatePR("hiero-ledger", "hiero-sdk-python", 2083);
     
-    console.log("✅ Evaluation completed. Check GitHub for comments/labels.");
+    console.log("Evaluation completed. Check GitHub for comments and labels.");
   } catch (error) {
-    console.error("❌ Test failed:", error);
+    console.error("Test failed:", error);
   }
 }
 
