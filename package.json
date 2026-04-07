@@ -20,6 +20,7 @@
   },
   "homepage": "https://github.com/Dev10-sys/hiero-workflow-app#readme",
   "dependencies": {
+    "@octokit/auth-app": "^8.2.0",
     "@octokit/rest": "^22.0.1",
     "@octokit/webhooks": "^14.2.0",
     "ajv": "^8.18.0",

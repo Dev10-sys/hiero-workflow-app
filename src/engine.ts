@@ -5,6 +5,7 @@ import { parse } from "yaml";
 /**
  * Hiero Workflow Engine
  * Core logic for evaluating repository events against .hiero-workflow.yml rules.
+ * Initialized with an authenticated Octokit instance (App or Installation token).
  */
 export class Engine {
   private octokit: Octokit;
@@ -15,14 +16,15 @@ export class Engine {
 
   /**
    * Loads the configuration from the target repository.
-   * Looks for .hiero-workflow.yml at the root of the default branch.
+   * Fetches .hiero-workflow.yml from the PR's head ref or default branch.
    */
-  async loadConfig(owner: string, repo: string): Promise<HieroWorkflowConfig | null> {
+  async loadConfig(owner: string, repo: string, ref?: string): Promise<HieroWorkflowConfig | null> {
     try {
       const { data } = await this.octokit.repos.getContent({
         owner,
         repo,
         path: ".hiero-workflow.yml",
+        ref,
       });
 
       if ("content" in data) {
@@ -31,39 +33,44 @@ export class Engine {
       }
       return null;
     } catch (error) {
-      console.warn(`[Engine] Configuration not found for ${owner}/${repo}`);
+      console.warn(`[Engine] Configuration not found for ${owner}/${repo} at ${ref || 'default branch'}`);
       return null;
     }
   }
 
   /**
    * Main entry point for Pull Request evaluations.
-   * Validates title, assignments, and applies path-based labels.
    */
   async evaluatePR(owner: string, repo: string, prNumber: number) {
-    const config = await this.loadConfig(owner, repo);
-    if (!config || !config.pull_requests) return;
-
+    // 1. Get PR details to find the head ref for config fetching
     const { data: pr } = await this.octokit.pulls.get({
       owner,
       repo,
       pull_number: prNumber,
     });
 
+    const headOwner = pr.head.repo?.owner.login || owner;
+    const headRepo = pr.head.repo?.name || repo;
+    const headRef = pr.head.ref;
+
+    // 2. Load repo-specific rules
+    const config = await this.loadConfig(headOwner, headRepo, headRef);
+    if (!config || !config.pull_requests) return;
+
     const checklist: string[] = [];
 
-    // 1. Validate PR Title (Conventional Commits)
+    // Title Check (Conventional Commits)
     const titleCheck = config.pull_requests.title_check;
     if (titleCheck?.enabled) {
       const regex = new RegExp(titleCheck.pattern);
       if (!regex.test(pr.title)) {
-        checklist.push(`❌ **PR Title**: ${titleCheck.error_message}`);
+        checklist.push(`❌ **PR Title**: ${titleCheck.error_message} (Found: "${pr.title}")`);
       } else {
         checklist.push(`✅ **PR Title**: Valid format`);
       }
     }
 
-    // 2. Ensure Assignee is present
+    // Assignee Check
     const assigneeCheck = config.pull_requests.assignee;
     if (assigneeCheck?.required && pr.assignees?.length === 0) {
       checklist.push(`❌ **Assignee**: ${assigneeCheck.error_message}`);
@@ -71,48 +78,24 @@ export class Engine {
       checklist.push(`✅ **Assignee**: Present`);
     }
 
-    // 3. Automated Path-Based Labeling
-    if (config.labeling?.path_map) {
-      const { data: files } = await this.octokit.pulls.listFiles({
-        owner,
-        repo,
-        pull_number: prNumber,
-      });
-
-      const labelsToAdd = new Set<string>();
-      for (const file of files) {
-        for (const [label, paths] of Object.entries(config.labeling.path_map)) {
-          if (paths.some(p => file.filename.startsWith(p.replace("**", "")))) {
-            labelsToAdd.add(label);
-          }
-        }
-      }
-
-      if (labelsToAdd.size > 0) {
-        await this.octokit.issues.addLabels({
-          owner,
-          repo,
-          issue_number: prNumber,
-          labels: Array.from(labelsToAdd),
-        });
-        console.log(`[PR #${prNumber}] Applied path-based labels: ${Array.from(labelsToAdd).join(", ")}`);
-      }
-    }
-
-    // 4. Update PR status/comment if there are failures
+    // Apply outcome to GitHub
     if (checklist.length > 0) {
       const body = `### 🤖 Hiero Workflow Check\n\n${checklist.join("\n")}\n\n*Please address the failing checks to proceed.*`;
+      
+      // Update check status and comment
       await this.octokit.issues.createComment({
         owner,
         repo,
         issue_number: prNumber,
         body,
       });
+
+      console.log(`[PR #${prNumber}] Validation result: ${checklist.length} failures found.`);
     }
   }
 
   /**
-   * Validates if a user is qualified to be assigned to an issue based on their history.
+   * Validates issue assignment based on cross-repo contributor qualification.
    */
   async evaluateAssignment(owner: string, repo: string, issueNumber: number, assignee: string) {
     const config = await this.loadConfig(owner, repo);
@@ -126,16 +109,14 @@ export class Engine {
     });
 
     for (const label of issue.labels) {
-      const labelName = typeof label === "string" ? label : label.name;
-      if (!labelName) continue;
-
+      const labelName = typeof label === "string" ? label : (label as any).name;
       const rule = rules.labels[labelName];
+
       if (rule) {
-        // Perform cross-repo GraphQL search for closed issues with specified label
-        const qualified = await this.checkQualification(owner, assignee, rule.prerequisite_label, rule.prerequisite_closed_issues);
+        const count = await this.checkQualification(owner, assignee, rule.prerequisite_label);
         
-        if (!qualified) {
-          const message = rules.error_message
+        if (count < rule.prerequisite_closed_issues) {
+          const body = rules.error_message
             .replace("{label}", labelName)
             .replace("{count}", rule.prerequisite_closed_issues.toString())
             .replace("{prereq}", rule.prerequisite_label)
@@ -145,7 +126,7 @@ export class Engine {
             owner,
             repo,
             issue_number: issueNumber,
-            body: `⚠️ **Qualification Warning**\n\n${message}`,
+            body: `⚠️ **Qualification Warning**\n\n${body}`,
           });
 
           await this.octokit.issues.removeAssignees({
@@ -155,27 +136,28 @@ export class Engine {
             assignees: [assignee],
           });
 
-          console.log(`[Issue #${issueNumber}] Unassigned @${assignee} due to missing qualification: ${labelName}`);
+          console.log(`[Issue #${issueNumber}] Unassigned @${assignee}: Needs ${rule.prerequisite_closed_issues} ${rule.prerequisite_label} issues.`);
         }
       }
     }
   }
 
-  private async checkQualification(owner: string, user: string, label: string, threshold: number): Promise<boolean> {
+  private async checkQualification(org: string, user: string, label: string): Promise<number> {
+    const searchQuery = `org:${org} is:issue is:closed label:"${label}" assignee:${user}`;
     const query = `
-      query($owner: String!, $user: String!, $label: String!) {
-        search(type: ISSUE, query: "org:${owner} is:issue is:closed label:\\"$label\\" assignee:$user", first: 100) {
+      query($searchQuery: String!) {
+        search(type: ISSUE, query: $searchQuery, first: 100) {
           issueCount
         }
       }
     `;
 
     try {
-      const result: any = await this.octokit.graphql(query, { owner, user, label });
-      return result.search.issueCount >= threshold;
+      const result: any = await this.octokit.graphql(query, { searchQuery });
+      return result.search.issueCount || 0;
     } catch (e) {
-      console.error("[Engine] GraphQL Query Failed", e);
-      return false;
+      console.error("[Engine] Cross-repo qualification query failed", e);
+      return 0;
     }
   }
 }
