@@ -20,14 +20,16 @@ export class Engine {
    */
   async loadConfig(owner: string, repo: string, ref?: string): Promise<HieroWorkflowConfig | null> {
     try {
-      const { data } = await this.octokit.repos.getContent({
+      const params: any = {
         owner,
         repo,
         path: ".hiero-workflow.yml",
-        ref,
-      });
+      };
+      if (ref) params.ref = ref;
 
-      if ("content" in data) {
+      const { data } = await this.octokit.repos.getContent(params);
+
+      if (data && !Array.isArray(data) && "content" in data) {
         const content = Buffer.from(data.content, "base64").toString();
         return parse(content) as HieroWorkflowConfig;
       }
