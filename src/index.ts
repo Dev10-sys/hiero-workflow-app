@@ -2,8 +2,8 @@ import express from "express";
 import { Webhooks } from "@octokit/webhooks";
 import { createAppAuth } from "@octokit/auth-app";
 import { Octokit } from "@octokit/rest";
-import { Engine } from "./engine";
-import dotenv from "dotenv";
+import { Engine } from "./engine.js";
+import * as dotenv from "dotenv";
 
 dotenv.config();
 
@@ -55,7 +55,7 @@ webhooks.on("issues.assigned", async ({ payload }: any) => {
 
 app.use(express.json());
 
-app.post("/webhooks", async (req, res) => {
+app.post("/webhooks", async (req: express.Request, res: express.Response) => {
   try {
     // Signature verification for production security
     await webhooks.verifyAndReceive({

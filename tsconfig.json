@@ -41,6 +41,9 @@
     "noUncheckedSideEffectImports": true,
     "moduleDetection": "force",
     "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
   },
-  "exclude": ["test/**/*"]
+  "exclude": ["test/**/*"],
+  "include": ["src/**/*"]
 }
