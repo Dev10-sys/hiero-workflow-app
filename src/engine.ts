@@ -53,53 +53,109 @@ export class Engine {
 
     const headOwner = pr.head.repo?.owner.login || owner;
     const headRepo = pr.head.repo?.name || repo;
-    const headRef = pr.head.ref;
+    const headRef = pr.head.sha; // Use SHA for Check Runs
 
-    // 2. Load repo-specific rules
-    const config = await this.loadConfig(headOwner, headRepo, headRef);
-    if (!config) {
-      console.log(`[PR #${prNumber}] Skipping: No .hiero-workflow.yml found.`);
-      return;
-    }
-    if (!config.pull_requests) {
-      console.log(`[PR #${prNumber}] Skipping: No pull_requests rules defined.`);
-      return;
-    }
+    // 2. Initialize Check Run
+    const checkRun = await this.octokit.checks.create({
+      owner,
+      repo,
+      name: "Hiero Workflow Validation",
+      head_sha: headRef,
+      status: "in_progress",
+      started_at: new Date().toISOString(),
+    });
 
-    const checklist: string[] = [];
-
-    // Title Check (Conventional Commits)
-    const titleCheck = config.pull_requests.title_check;
-    if (titleCheck?.enabled) {
-      const regex = new RegExp(titleCheck.pattern);
-      if (!regex.test(pr.title)) {
-        checklist.push(`❌ **PR Title**: ${titleCheck.error_message} (Found: "${pr.title}")`);
-      } else {
-        checklist.push(`✅ **PR Title**: Valid format`);
+    try {
+      // 3. Load repo-specific rules
+      const config = await this.loadConfig(headOwner, headRepo, headRef);
+      if (!config || !config.pull_requests) {
+        const message = !config ? "No .hiero-workflow.yml found." : "No pull_requests rules defined.";
+        console.log(`[PR #${prNumber}] Skipping: ${message}`);
+        
+        await this.octokit.checks.update({
+          owner,
+          repo,
+          check_run_id: checkRun.data.id,
+          status: "completed",
+          conclusion: "neutral",
+          output: {
+            title: "Hiero Workflow Skipped",
+            summary: message,
+          },
+        });
+        return;
       }
-    }
 
-    // Assignee Check
-    const assigneeCheck = config.pull_requests.assignee;
-    if (assigneeCheck?.required && pr.assignees?.length === 0) {
-      checklist.push(`❌ **Assignee**: ${assigneeCheck.error_message}`);
-    } else {
-      checklist.push(`✅ **Assignee**: Present`);
-    }
+      const failures: string[] = [];
+      const successes: string[] = [];
 
-    // Apply outcome to GitHub
-    if (checklist.length > 0) {
-      const body = `### 🤖 Hiero Workflow Check\n\n${checklist.join("\n")}\n\n*Please address the failing checks to proceed.*`;
-      
-      // Update check status and comment
-      await this.octokit.issues.createComment({
+      // Title Check (Conventional Commits)
+      const titleCheck = config.pull_requests.title_check;
+      if (titleCheck?.enabled) {
+        const regex = new RegExp(titleCheck.pattern);
+        if (!regex.test(pr.title)) {
+          failures.push(`❌ **PR Title**: ${titleCheck.error_message} (Found: "${pr.title}")`);
+        } else {
+          successes.push(`✅ **PR Title**: Valid format`);
+        }
+      }
+
+      // Assignee Check
+      const assigneeCheck = config.pull_requests.assignee;
+      if (assigneeCheck?.required && pr.assignees?.length === 0) {
+        failures.push(`❌ **Assignee**: ${assigneeCheck.error_message}`);
+      } else {
+        successes.push(`✅ **Assignee**: Present`);
+      }
+
+      const allChecks = [...failures, ...successes];
+      const isSuccess = failures.length === 0;
+
+      // 4. Update Check Run result
+      await this.octokit.checks.update({
         owner,
         repo,
-        issue_number: prNumber,
-        body,
+        check_run_id: checkRun.data.id,
+        status: "completed",
+        conclusion: isSuccess ? "success" : "failure",
+        completed_at: new Date().toISOString(),
+        output: {
+          title: isSuccess ? "All checks passed" : "Validation failed",
+          summary: isSuccess 
+            ? "Your PR meets all Hiero workflow requirements." 
+            : "Please address the following requirements to merge.",
+          text: allChecks.join("\n\n"),
+        },
       });
 
-      console.log(`[PR #${prNumber}] Validation result: ${checklist.length} failures found.`);
+      // 5. Post comment only if there are failures (existing logic)
+      if (!isSuccess) {
+        const body = `### 🤖 Hiero Workflow Check\n\n${failures.join("\n")}\n\n*Please address the failing checks to proceed.*`;
+        await this.octokit.issues.createComment({
+          owner,
+          repo,
+          issue_number: prNumber,
+          body,
+        });
+        console.log(`[PR #${prNumber}] Validation result: ${failures.length} failures found.`);
+      } else {
+        console.log(`[PR #${prNumber}] Validation result: Success.`);
+      }
+
+    } catch (error) {
+      console.error(`[PR #${prNumber}] Engine evaluation failed: ${error}`);
+      await this.octokit.checks.update({
+        owner,
+        repo,
+        check_run_id: checkRun.data.id,
+        status: "completed",
+        conclusion: "failure",
+        output: {
+          title: "Hiero Workflow Error",
+          summary: "An internal error occurred during validation.",
+          text: `Error details: ${error}`,
+        },
+      });
     }
   }
 
