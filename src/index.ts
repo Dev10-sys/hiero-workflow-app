@@ -67,13 +67,35 @@ app.get("/health", (req, res) => {
 
 app.post("/webhooks", async (req: express.Request, res: express.Response) => {
   try {
-    // Signature verification for production security
-    await webhooks.verifyAndReceive({
-      id: req.headers["x-github-delivery"] as string,
-      name: req.headers["x-github-event"] as any,
-      payload: JSON.stringify(req.body),
-      signature: req.headers["x-hub-signature-256"] as string,
-    });
+    const bridgeToken = req.headers["x-hiero-bridge-token"];
+    const webhookSecret = process.env.WEBHOOK_SECRET || "development";
+
+    if (bridgeToken === webhookSecret) {
+      // Authenticated via Bridge token
+      console.log(`[Hiero] Authenticated via Bridge Token`);
+    } else {
+      // Fallback to GitHub Signature verification
+      await webhooks.verifyAndReceive({
+        id: req.headers["x-github-delivery"] as string,
+        name: req.headers["x-github-event"] as any,
+        payload: JSON.stringify(req.body),
+        signature: req.headers["x-hub-signature-256"] as string,
+      });
+    }
+    
+    // Process the event (webhooks.verifyAndReceive handles its own events, 
+    // but for bridge token we need to manually trigger them if we skip verifyAndReceive)
+    // Actually, it's better to just manually call the listeners if bridgeToken matches.
+    
+    if (bridgeToken === webhookSecret) {
+      const eventName = req.headers["x-github-event"] as string;
+      await webhooks.receive({
+        id: req.headers["x-github-delivery"] as string,
+        name: eventName as any,
+        payload: req.body,
+      });
+    }
+
     res.status(200).send("Accepted");
   } catch (error) {
     console.error(`[Hiero] Webhook processing failed: ${error}`);
