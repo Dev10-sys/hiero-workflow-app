@@ -1,8 +1,11 @@
 import axios from "axios";
 import crypto from "crypto";
+import * as dotenv from "dotenv";
+dotenv.config();
 
 const WEBHOOK_URL = "https://hiero-workflow-app.onrender.com/webhooks";
-const SECRET = "hiero_secret_2024";
+const SECRET = process.env.WEBHOOK_SECRET || "mysecret123";
+console.log(`[Test] Using secret starting with: ${SECRET.substring(0, 3)}...`);
 
 function sign(payload: string): string {
   return "sha256=" + crypto.createHmac("sha256", SECRET).update(payload).digest("hex");

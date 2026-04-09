@@ -57,7 +57,12 @@ app.use(express.json());
 
 // ─── Health check ───────────────────────────────────────────────
 app.get("/health", (req, res) => {
-  res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
+  const secretPart = process.env.WEBHOOK_SECRET ? process.env.WEBHOOK_SECRET.substring(0, 3) + "..." : "NOT SET";
+  res.status(200).json({ 
+    status: "ok", 
+    timestamp: new Date().toISOString(),
+    secret_preview: secretPart
+  });
 });
 
 app.post("/webhooks", async (req: express.Request, res: express.Response) => {
