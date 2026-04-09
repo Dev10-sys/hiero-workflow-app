@@ -55,6 +55,11 @@ webhooks.on("issues.assigned", async ({ payload }: any) => {
 
 app.use(express.json());
 
+// ─── Health check ───────────────────────────────────────────────
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
 app.post("/webhooks", async (req: express.Request, res: express.Response) => {
   try {
     // Signature verification for production security
