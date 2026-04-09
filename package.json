@@ -1,6 +1,9 @@
 {
   "name": "hiero-workflow-app",
   "version": "1.0.0",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -33,7 +36,7 @@
   "devDependencies": {
     "@types/axios": "^0.9.36",
     "@types/express": "^5.0.6",
-    "@types/node": "^25.5.2",
+    "@types/node": "^20.0.0",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.2"
   }
