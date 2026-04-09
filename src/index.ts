@@ -8,6 +8,7 @@ import * as dotenv from "dotenv";
 dotenv.config();
 
 const app = express();
+app.use(express.json());
 const webhooks = new Webhooks({
   secret: process.env.WEBHOOK_SECRET || "development",
 });
