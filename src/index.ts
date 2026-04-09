@@ -32,7 +32,7 @@ webhooks.on("pull_request.opened", async ({ payload }: any) => {
   const { owner, name } = payload.repository;
   const installationId = payload.installation.id;
   
-  console.log(`[Hiero] PR #${payload.number} in ${owner.login}/${name} installation: ${installationId}`);
+  console.log(`[Hiero] Event: pull_request.opened | Repo: ${owner.login}/${name} | Installation: ${installationId}`);
   
   const octokit = await getInstallationClient(installationId);
   const engine = new Engine(octokit);
@@ -44,16 +44,18 @@ webhooks.on("issues.assigned", async ({ payload }: any) => {
   const installationId = payload.installation.id;
   const assignee = payload.assignee.login;
 
-  console.log(`[Hiero] Issue #${payload.issue.number} assigned to @${assignee} in ${owner.login}/${name}`);
+  console.log(`[Hiero] Event: issues.assigned | Repo: ${owner.login}/${name} | Assignee: @${assignee}`);
 
   const octokit = await getInstallationClient(installationId);
   const engine = new Engine(octokit);
   await engine.evaluateAssignment(owner.login, name, payload.issue.number, assignee);
 });
 
-// ─── Webhook Receiver ────────────────────────────────────────────
+// ─── Routes ─────────────────────────────────────────────────────
 
-app.use(express.json());
+app.get("/", (req, res) => {
+  res.status(200).send("<h1>Hiero Automation Hub running</h1><p>Ready to process repository events.</p>");
+});
 
 // ─── Health check ───────────────────────────────────────────────
 app.get("/health", (req, res) => {
@@ -66,39 +68,39 @@ app.get("/health", (req, res) => {
 });
 
 app.post("/webhooks", async (req: express.Request, res: express.Response) => {
+  const eventName = req.headers["x-github-event"] as string;
+  const deliveryId = req.headers["x-github-delivery"] as string;
+  
+  console.log(`>>> Incoming Webhook [${deliveryId}]: ${eventName}`);
+
   try {
     const bridgeToken = req.headers["x-hiero-bridge-token"];
     const webhookSecret = process.env.WEBHOOK_SECRET || "development";
 
-    if (bridgeToken === webhookSecret) {
-      // Authenticated via Bridge token
+    if (bridgeToken && bridgeToken === webhookSecret) {
       console.log(`[Hiero] Authenticated via Bridge Token`);
-    } else {
-      // Fallback to GitHub Signature verification
-      await webhooks.verifyAndReceive({
-        id: req.headers["x-github-delivery"] as string,
-        name: req.headers["x-github-event"] as any,
-        payload: JSON.stringify(req.body),
-        signature: req.headers["x-hub-signature-256"] as string,
-      });
-    }
-    
-    // Process the event (webhooks.verifyAndReceive handles its own events, 
-    // but for bridge token we need to manually trigger them if we skip verifyAndReceive)
-    // Actually, it's better to just manually call the listeners if bridgeToken matches.
-    
-    if (bridgeToken === webhookSecret) {
-      const eventName = req.headers["x-github-event"] as string;
       await webhooks.receive({
-        id: req.headers["x-github-delivery"] as string,
+        id: deliveryId,
         name: eventName as any,
         payload: req.body,
+      });
+    } else {
+      // Signature verification for production safety
+      if (!req.headers["x-hub-signature-256"]) {
+        throw new Error("Missing X-Hub-Signature-256 header");
+      }
+      
+      await webhooks.verifyAndReceive({
+        id: deliveryId,
+        name: eventName as any,
+        payload: JSON.stringify(req.body),
+        signature: req.headers["x-hub-signature-256"] as string,
       });
     }
 
     res.status(200).send("Accepted");
   } catch (error) {
-    console.error(`[Hiero] Webhook processing failed: ${error}`);
+    console.error(`[Hiero] Webhook unauthorized or failed: ${error}`);
     res.status(401).send("Unauthorized");
   }
 });

@@ -57,7 +57,14 @@ export class Engine {
 
     // 2. Load repo-specific rules
     const config = await this.loadConfig(headOwner, headRepo, headRef);
-    if (!config || !config.pull_requests) return;
+    if (!config) {
+      console.log(`[PR #${prNumber}] Skipping: No .hiero-workflow.yml found.`);
+      return;
+    }
+    if (!config.pull_requests) {
+      console.log(`[PR #${prNumber}] Skipping: No pull_requests rules defined.`);
+      return;
+    }
 
     const checklist: string[] = [];
 
@@ -104,11 +111,17 @@ export class Engine {
     const rules = config?.contributor_checks?.assignment_restriction;
     if (!rules?.enabled) return;
 
-    const { data: issue } = await this.octokit.issues.get({
-      owner,
-      repo,
-      issue_number: issueNumber,
-    });
+    try {
+      const { data: issue } = await this.octokit.issues.get({
+        owner,
+        repo,
+        issue_number: issueNumber,
+      });
+
+      if (!issue.labels || issue.labels.length === 0) {
+        console.log(`[Issue #${issueNumber}] No labels found. Skipping assignment evaluation.`);
+        return;
+      }
 
     for (const label of issue.labels) {
       const labelName = typeof label === "string" ? label : (label as any).name;
@@ -140,7 +153,10 @@ export class Engine {
 
           console.log(`[Issue #${issueNumber}] Unassigned @${assignee}: Needs ${rule.prerequisite_closed_issues} ${rule.prerequisite_label} issues.`);
         }
+        }
       }
+    } catch (error) {
+      console.error(`[Issue #${issueNumber}] Assignment evaluation failed: ${error}`);
     }
   }
 
